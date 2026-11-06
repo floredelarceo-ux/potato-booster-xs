@@ -1,0 +1,79 @@
+name: Build Potato Booster X APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Extract Android project
+        shell: bash
+        run: |
+          if [ ! -f "android-project.zip" ]; then
+            echo "ERROR: android-project.zip is missing"
+            exit 1
+          fi
+
+          mkdir -p android-project
+          unzip -q android-project.zip -d android-project
+
+          GRADLEW=$(find android-project -type f -name gradlew -print -quit)
+
+          if [ -z "$GRADLEW" ]; then
+            echo "ERROR: No Gradle wrapper found."
+            echo "This ZIP must contain a native Android Gradle project."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$GRADLEW")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          chmod +x "$PROJECT_DIR/gradlew"
+          "$PROJECT_DIR/gradlew" \
+            --no-daemon \
+            assembleDebug
+
+      - name: Collect APK
+        shell: bash
+        run: |
+          mkdir -p apk-output
+
+          find "$PROJECT_DIR" \
+            -type f \
+            -path '*/build/outputs/apk/*/*.apk' \
+            -exec cp -f {} apk-output/ \;
+
+          if [ -z "$(find apk-output -name '*.apk' -print -quit)" ]; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+
+          ls -lh apk-output
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: Potato-Booster-X-debug-APK
+          path: apk-output/*.apk
+          if-no-files-found: error
+          
